@@ -1,0 +1,19 @@
+*** Begin Patch
+*** Update File: esp32_firmware/esp32_firmware.ino
+@@
+-const char *WIFI_SSID = "PiHub";
+-const char *WIFI_PASS = "transgender";
+-IPAddress WIFI_IP(192, 168, 4, 50);
+-IPAddress WIFI_GATEWAY(192, 168, 4, 1);
+-IPAddress WIFI_SUBNET(255, 255, 255, 0);
+-IPAddress WIFI_DNS(192, 168, 4, 1);
++// Try HotMess first (Internet AP), then fall back to PiHub AP
++const char *WIFI1_SSID = "HotMess";
++const char *WIFI1_PASS = "transgender";
++const char *WIFI2_SSID = "PiHub";
++const char *WIFI2_PASS = "transgender";
++IPAddress WIFI_IP(192, 168, 4, 50);
++IPAddress WIFI_GATEWAY(192, 168, 4, 1);
++IPAddress WIFI_SUBNET(255, 255, 255, 0);
++IPAddress WIFI_DNS(192, 168, 4, 1);
+*** End Patch

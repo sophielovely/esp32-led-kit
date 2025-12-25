@@ -1,0 +1,1195 @@
+{
+  "states": {
+    "normal": {
+      "segments": {
+        "strip1": {
+          "segment": "strip1",
+          "pattern": "rainbow",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            180,
+            160
+          ],
+          "wave_shape": "sine"
+        }
+      }
+    },
+    "hardynew": {
+      "segments": {
+        "strip0": {
+          "segment": "strip0",
+          "pattern": "solid",
+          "brightness": 180,
+          "speed": 1.0,
+          "color": [
+            0,
+            180,
+            160
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0
+        },
+        "strip1": {
+          "segment": "strip1",
+          "pattern": "rainbow",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            180,
+            160
+          ],
+          "wave_shape": "",
+          "wave_count": 5.0
+        },
+        "strip2": {
+          "segment": "strip2",
+          "pattern": "solid",
+          "brightness": 180,
+          "speed": 1.0,
+          "color": [
+            0,
+            180,
+            160
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0
+        },
+        "strip3": {
+          "segment": "strip3",
+          "pattern": "solid",
+          "brightness": 180,
+          "speed": 1.0,
+          "color": [
+            0,
+            180,
+            160
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0
+        },
+        "seg250_323": {
+          "segment": "seg250_323",
+          "pattern": "solid",
+          "brightness": 38.0,
+          "speed": 1.0,
+          "color": [
+            200,
+            40,
+            0
+          ],
+          "wave_shape": "",
+          "wave_count": 5.0
+        },
+        "seg330_400": {
+          "segment": "seg330_400",
+          "pattern": "solid",
+          "brightness": 180,
+          "speed": 1.0,
+          "color": [
+            0,
+            180,
+            160
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0
+        }
+      }
+    },
+    "audioreactive": {
+      "segments": {
+        "strip0": {
+          "segment": "strip0",
+          "pattern": "solid",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            180,
+            160
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0
+        },
+        "strip1": {
+          "segment": "strip1",
+          "pattern": "mic_vu",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            128,
+            128,
+            0
+          ],
+          "wave_shape": "",
+          "wave_count": 5.0
+        },
+        "strip2": {
+          "segment": "strip2",
+          "pattern": "solid",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            180,
+            160
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0
+        },
+        "strip3": {
+          "segment": "strip3",
+          "pattern": "solid",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            180,
+            160
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0
+        },
+        "seg250_323": {
+          "segment": "seg250_323",
+          "pattern": "solid",
+          "brightness": 38.0,
+          "speed": 1.0,
+          "color": [
+            200,
+            40,
+            0
+          ],
+          "wave_shape": "",
+          "wave_count": 5.0
+        },
+        "seg330_400": {
+          "segment": "seg330_400",
+          "pattern": "solid",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            180,
+            160
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0
+        }
+      }
+    },
+    "arutdiorecative recent": {
+      "segments": {
+        "strip0": {
+          "segment": "strip0",
+          "pattern": "solid",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            180,
+            160
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        },
+        "strip1": {
+          "segment": "strip1",
+          "pattern": "mic_vu",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            0,
+            0
+          ],
+          "wave_shape": "",
+          "wave_count": 5.0,
+          "mic_gain": 0.4,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.54,
+          "mic_enabled": true,
+          "gradient_enabled": true,
+          "gradient_low": [
+            120,
+            255,
+            120
+          ],
+          "gradient_mid": [
+            170,
+            255,
+            0
+          ],
+          "gradient_high": [
+            255,
+            255,
+            120
+          ]
+        },
+        "strip2": {
+          "segment": "strip2",
+          "pattern": "solid",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            180,
+            160
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        },
+        "strip3": {
+          "segment": "strip3",
+          "pattern": "solid",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            180,
+            160
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        },
+        "seg250_323": {
+          "segment": "seg250_323",
+          "pattern": "solid",
+          "brightness": 38.0,
+          "speed": 1.0,
+          "color": [
+            200,
+            40,
+            0
+          ],
+          "wave_shape": "",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        },
+        "seg330_400": {
+          "segment": "seg330_400",
+          "pattern": "mic_vu",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            0,
+            0
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.13,
+          "mic_smooth": 0.34,
+          "mic_enabled": true,
+          "gradient_enabled": true,
+          "gradient_low": [
+            255,
+            0,
+            0
+          ],
+          "gradient_mid": [
+            255,
+            140,
+            0
+          ],
+          "gradient_high": [
+            255,
+            255,
+            0
+          ]
+        }
+      }
+    },
+    "hahanewAR": {
+      "segments": {
+        "strip0": {
+          "segment": "strip0",
+          "pattern": "solid",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            180,
+            160
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        },
+        "strip1": {
+          "segment": "strip1",
+          "pattern": "mic_vu",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            0,
+            0
+          ],
+          "wave_shape": "",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": true,
+          "gradient_low": [
+            255,
+            80,
+            0
+          ],
+          "gradient_mid": [
+            255,
+            0,
+            120
+          ],
+          "gradient_high": [
+            80,
+            0,
+            255
+          ]
+        },
+        "strip2": {
+          "segment": "strip2",
+          "pattern": "solid",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            180,
+            160
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        },
+        "strip3": {
+          "segment": "strip3",
+          "pattern": "solid",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            180,
+            160
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        },
+        "seg250_323": {
+          "segment": "seg250_323",
+          "pattern": "solid",
+          "brightness": 38.0,
+          "speed": 1.0,
+          "color": [
+            200,
+            40,
+            0
+          ],
+          "wave_shape": "",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        },
+        "seg330_400": {
+          "segment": "seg330_400",
+          "pattern": "solid",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            180,
+            160
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        }
+      }
+    },
+    "newdefult": {
+      "segments": {
+        "strip0": {
+          "segment": "strip0",
+          "pattern": "solid",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            180,
+            160
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        },
+        "strip1": {
+          "segment": "strip1",
+          "pattern": "rainbow",
+          "brightness": 97.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            0,
+            0
+          ],
+          "wave_shape": "",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": true,
+          "gradient_low": [
+            255,
+            80,
+            0
+          ],
+          "gradient_mid": [
+            255,
+            0,
+            120
+          ],
+          "gradient_high": [
+            80,
+            0,
+            255
+          ]
+        },
+        "strip2": {
+          "segment": "strip2",
+          "pattern": "solid",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            180,
+            160
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        },
+        "strip3": {
+          "segment": "strip3",
+          "pattern": "solid",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            180,
+            160
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        },
+        "seg250_323": {
+          "segment": "seg250_323",
+          "pattern": "solid",
+          "brightness": 38.0,
+          "speed": 1.0,
+          "color": [
+            200,
+            40,
+            0
+          ],
+          "wave_shape": "",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        },
+        "seg330_400": {
+          "segment": "seg330_400",
+          "pattern": "solid",
+          "brightness": 43.0,
+          "speed": 1.0,
+          "color": [
+            255,
+            165,
+            0
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        }
+      }
+    },
+    "cam": {
+      "segments": {
+        "strip0": {
+          "segment": "strip0",
+          "pattern": "solid",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            255,
+            255,
+            255
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        },
+        "strip1": {
+          "segment": "strip1",
+          "pattern": "solid",
+          "brightness": 97.0,
+          "speed": 1.0,
+          "color": [
+            255,
+            255,
+            255
+          ],
+          "wave_shape": "",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            255,
+            80,
+            0
+          ],
+          "gradient_mid": [
+            255,
+            0,
+            120
+          ],
+          "gradient_high": [
+            80,
+            0,
+            255
+          ]
+        },
+        "strip2": {
+          "segment": "strip2",
+          "pattern": "solid",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            255,
+            255,
+            255
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        },
+        "strip3": {
+          "segment": "strip3",
+          "pattern": "solid",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            255,
+            255,
+            255
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        },
+        "seg250_323": {
+          "segment": "seg250_323",
+          "pattern": "solid",
+          "brightness": 38.0,
+          "speed": 1.0,
+          "color": [
+            255,
+            255,
+            255
+          ],
+          "wave_shape": "",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        },
+        "seg330_400": {
+          "segment": "seg330_400",
+          "pattern": "solid",
+          "brightness": 43.0,
+          "speed": 1.0,
+          "color": [
+            255,
+            255,
+            255
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        }
+      }
+    },
+    "newdagaukt": {
+      "segments": {
+        "strip0": {
+          "segment": "strip0",
+          "pattern": "solid",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            180,
+            160
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        },
+        "strip1": {
+          "segment": "strip1",
+          "pattern": "rainbow",
+          "brightness": 97.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            0,
+            0
+          ],
+          "wave_shape": "",
+          "wave_count": 18.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": true,
+          "gradient_low": [
+            255,
+            80,
+            0
+          ],
+          "gradient_mid": [
+            255,
+            0,
+            120
+          ],
+          "gradient_high": [
+            80,
+            0,
+            255
+          ]
+        },
+        "strip2": {
+          "segment": "strip2",
+          "pattern": "rainbow",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            0,
+            0
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": true,
+          "gradient_low": [
+            0,
+            170,
+            220
+          ],
+          "gradient_mid": [
+            0,
+            230,
+            170
+          ],
+          "gradient_high": [
+            130,
+            255,
+            220
+          ]
+        },
+        "strip3": {
+          "segment": "strip3",
+          "pattern": "rainbow",
+          "brightness": 180.0,
+          "speed": 1.0,
+          "color": [
+            0,
+            0,
+            0
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": true,
+          "gradient_low": [
+            0,
+            170,
+            220
+          ],
+          "gradient_mid": [
+            0,
+            230,
+            170
+          ],
+          "gradient_high": [
+            130,
+            255,
+            220
+          ]
+        },
+        "seg250_323": {
+          "segment": "seg250_323",
+          "pattern": "solid",
+          "brightness": 38.0,
+          "speed": 1.0,
+          "color": [
+            128,
+            0,
+            0
+          ],
+          "wave_shape": "",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        },
+        "seg330_400": {
+          "segment": "seg330_400",
+          "pattern": "solid",
+          "brightness": 43.0,
+          "speed": 1.0,
+          "color": [
+            255,
+            165,
+            0
+          ],
+          "wave_shape": "sine",
+          "wave_count": 5.0,
+          "mic_gain": 0.3,
+          "mic_floor": 0.02,
+          "mic_smooth": 0.3,
+          "mic_enabled": true,
+          "gradient_enabled": false,
+          "gradient_low": [
+            0,
+            120,
+            255
+          ],
+          "gradient_mid": [
+            255,
+            255,
+            255
+          ],
+          "gradient_high": [
+            255,
+            0,
+            120
+          ]
+        }
+      }
+    }
+  },
+  "default": "newdagaukt"
+}
