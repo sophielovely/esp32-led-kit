@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Spotify Control</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="page">
+  <div class="top-bar">
+    <a class="btn ghost" href="{{ url_for('home') }}">← Back</a>
+    <div class="status-pill" id="deviceStatus">spotifyd</div>
+  </div>
+
+  <div class="panel">
+    {% if not authorized %}
+      <div class="auth-block">
+        <p>This device is not authorized with Spotify yet.</p>
+        <a class="btn primary" href="{{ url_for('login') }}">Sign in to Spotify</a>
+      </div>
+    {% else %}
+      <div class="art-wrapper">
+        <img id="albumArt" class="art" src="" alt="Album art">
+        <div class="art-placeholder" id="artPlaceholder">No Art</div>
+      </div>
+      <div class="track-info">
+        <div id="trackTitle" class="track-title">Nothing playing</div>
+        <div id="trackArtist" class="track-artist"></div>
+      </div>
+      <div class="controls">
+        <button class="btn circle" id="prevBtn">⏮</button>
+        <button class="btn circle primary" id="playPauseBtn">▶</button>
+        <button class="btn circle" id="nextBtn">⏭</button>
+      </div>
+      <div class="volume-row">
+        <button class="btn wide ghost" id="volDown">Volume -</button>
+        <button class="btn wide ghost" id="volUp">Volume +</button>
+      </div>
+      <div class="helper-text" id="helperText"></div>
+    {% endif %}
+  </div>
+
+  <script>
+    window.SPOTIFY_AUTHORIZED = {{ "true" if authorized else "false" }};
+  </script>
+  <script src="{{ url_for('static', filename='spotify.js') }}"></script>
+</body>
+</html>
