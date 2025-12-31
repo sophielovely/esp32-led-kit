@@ -265,6 +265,7 @@ def index():
         mqtt_topic=MQTT_CMD_TOPIC,
         esp_default_ip=ESP_DEFAULT_IP,
         esp2_default_ip=ESP2_DEFAULT_IP,
+        esp3_default_ip=ESP3_DEFAULT_IP,
         segment_labels=SEGMENT_LABELS,
         colors=COLOR_PALETTE,
         gradients=GRADIENT_PALETTE,
@@ -2027,12 +2028,22 @@ let brightnessTimer = null;
     }
 
     async function lightsOn() {
+      setStatus('Lights on');
       let val = lastBrightness > 0 ? lastBrightness : 180;
+      // Try to apply saved default; fall back to a gentle brightness.
+      try {
+        const res = await postJson('/api/state/apply-default', {});
+        const data = await res.json();
+        if (!data.ok) {
+          await postJson('/api/set-all', {brightness: val});
+        }
+      } catch (e) {
+        await postJson('/api/set-all', {brightness: val});
+      }
+      // Bring camming lights up as well.
+      await qmCamSend({pattern: qmCamLastPattern || 'white', brightness: parseFloat(qmCamB.value || '200'), target:'both'});
       brightnessEl.value = val;
       bval.textContent = val;
-      setStatus('Lights on');
-      await postJson('/api/set-all', {brightness: val});
-      await qmCamSend({pattern: qmCamLastPattern || 'white', brightness: parseFloat(qmCamB.value || '200'), target:'both'});
     }
 
     async function lightsOff() {
