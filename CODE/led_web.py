@@ -934,6 +934,7 @@ def quickmenu():
         patterns=PATTERNS,
         esp_default_ip=ESP_DEFAULT_IP,
         esp2_default_ip=ESP2_DEFAULT_IP,
+        esp3_default_ip=ESP3_DEFAULT_IP,
     )
 
 
