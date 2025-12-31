@@ -5,7 +5,8 @@ Control the ESP32 LED firmware from a computer using the command-line helper or 
 ## Contents
 - `esp32_led_control.py` — CLI helper that publishes MQTT JSON commands to the ESP32 firmware.
 - `led_web.py` — Local web UI + API that sends the same MQTT commands and remembers recent state.
-- `led_states.json` — Saved default values the web UI loads at startup.
+- `led_states.json` — Saved default values the web UI loads at startup (main segments).
+- `esp3_states.json` — Saved presets/default for the camming ESP (ESP3).
 - `requirements.txt` — Python dependencies for both tools.
 
 ## Prerequisites
@@ -45,6 +46,7 @@ Launch a small Flask app that serves a mobile-friendly control page and publishe
 python led_web.py
 ```
 - Uses `LED_STATE_FILE` (defaults to `./led_states.json`) to remember the last sent values.
+- Camming card: controls ESP3 on topic `esp32u/command` (env `ESP3_IP`, `ESP3_CMD_TOPIC`), with White, Rainbow, Rainbow hills, brightness, and its own presets (`esp3_states.json` + default apply on connect).
 - Reads the same MQTT env vars as the CLI.
 - Visits to `/` render the control UI; `/status` returns last-known values for the UI.
 

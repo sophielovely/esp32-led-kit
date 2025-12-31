@@ -10,6 +10,7 @@ import json
 import os
 import time
 import subprocess
+import math
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -27,15 +28,14 @@ SEGMENTS = [
     "strip1",
     "strip2",
     "strip3",
-    "seg250_323",
-    "seg330_400",
 ]
 SEGMENT_LABELS = {
     "strip1": "Main Surround Lights",
-    "seg250_323": "Right Speaker",
-    "seg330_400": "Left Speaker",
+    "strip2": "Right Speaker",
+    "strip3": "Left Speaker",
 }
 PATTERNS = ["solid", "rainbow", "sine", "wind_meter", "mic_vu"]
+CAMMING_PATTERNS = ["white", "rainbow", "rainbow_hills"]
 COLOR_PALETTE = [
     ("Red", [255, 0, 0]),
     ("Crimson", [220, 20, 60]),
@@ -114,6 +114,9 @@ GRADIENT_PALETTE = [
 START_TIME = time.time()
 ESP_DEFAULT_IP = os.getenv("ESP_IP", "10.42.0.13")
 ESP2_DEFAULT_IP = os.getenv("ESP2_IP", "10.42.0.29")
+ESP3_DEFAULT_IP = os.getenv("ESP3_IP", "10.42.0.173")
+ESP3_CMD_TOPIC = os.getenv("ESP3_CMD_TOPIC", "esp32u/command")
+ESP3_STATES_FILE = os.getenv("ESP3_STATE_FILE", os.path.join(os.path.dirname(__file__), "esp3_states.json"))
 
 app = Flask(__name__)
 # In-memory cache of last sent state (best effort for display)
@@ -129,8 +132,10 @@ for seg in STATE_CACHE:
     STATE_CACHE[seg]["gradient_mid"] = [255, 255, 255]
     STATE_CACHE[seg]["gradient_high"] = [255, 0, 120]
     STATE_CACHE[seg]["mic_beat"] = False
+ESP3_STATE: Dict[str, float] = {"brightness": 200, "white_balance": 4500, "last_pattern": "white", "target": "both"}
 LAST_DEFAULT_APPLY = 0.0
 LAST_ESP_UP = False
+LAST_ESP3_UP = False
 
 
 def publish(payload: Dict) -> None:
@@ -144,6 +149,35 @@ def publish(payload: Dict) -> None:
     finally:
         client.loop_stop()
         client.disconnect()
+
+
+def publish_esp3(payload: Dict) -> None:
+    """Send a message to the ESP32U (camming lights) topic."""
+    client = mqtt.Client(client_id="led-web-ui-esp3")
+    if MQTT_USER:
+        client.username_pw_set(MQTT_USER, MQTT_PASS)
+    client.connect(MQTT_HOST, MQTT_PORT, keepalive=30)
+    client.loop_start()
+    try:
+        client.publish(ESP3_CMD_TOPIC, json.dumps(payload), qos=0, retain=False)
+    finally:
+        client.loop_stop()
+        client.disconnect()
+
+
+def color_temp_to_rgb(kelvin: float) -> List[int]:
+    """Approximate color temperature (K) to RGB for white balance slider."""
+    k = max(1500.0, min(9000.0, float(kelvin)))
+    tmp = k / 100.0
+    if tmp <= 66:
+        red = 255
+        green = 99.4708025861 * math.log(tmp) - 161.1195681661
+        blue = 0 if tmp <= 19 else 138.5177312231 * math.log(tmp - 10) - 305.0447927307
+    else:
+        red = 329.698727446 * ((tmp - 60) ** -0.1332047592)
+        green = 288.1221695283 * ((tmp - 60) ** -0.0755148492)
+        blue = 255
+    return [int(max(0, min(255, red))), int(max(0, min(255, green))), int(max(0, min(255, blue)))]
 
 
 @dataclass
@@ -278,9 +312,172 @@ def api_status():
             "mqtt_host": MQTT_HOST,
             "mqtt_topic": MQTT_CMD_TOPIC,
             "esp_default_ip": ESP_DEFAULT_IP,
+            "esp3_default_ip": ESP3_DEFAULT_IP,
         }
     )
 
+
+def load_esp3_states() -> (Dict[str, Dict], Optional[str]):
+    if not os.path.exists(ESP3_STATES_FILE):
+        return {}, None
+    try:
+        with open(ESP3_STATES_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data.get("states", {}), data.get("default")
+    except Exception:
+        pass
+    return {}, None
+
+
+def write_esp3_states(states: Dict[str, Dict], default_name: Optional[str] = None) -> None:
+    payload = {"states": states}
+    if default_name and default_name in states:
+        payload["default"] = default_name
+    try:
+        with open(ESP3_STATES_FILE, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+    except Exception:
+        pass
+
+
+def _apply_esp3_snapshot(data: Dict) -> Dict:
+    """Apply a camming snapshot dict."""
+    pattern = data.get("pattern", ESP3_STATE.get("last_pattern", "white"))
+    if pattern not in CAMMING_PATTERNS:
+        pattern = "white"
+    brightness = data.get("brightness", ESP3_STATE.get("brightness", 200))
+    white_balance = data.get("white_balance", ESP3_STATE.get("white_balance", 4500))
+    target = data.get("target", ESP3_STATE.get("target", "both"))
+    payload = {
+        "cmd": "set",
+        "pattern": pattern,
+        "brightness": brightness,
+        "white_balance": white_balance,
+        "target": target,
+        "strips": [{"pin": 33, "length": 300}, {"pin": 32, "length": 300}],
+    }
+    if pattern == "white":
+        payload["color"] = color_temp_to_rgb(white_balance)
+    publish_esp3(payload)
+    ESP3_STATE.update(
+        {
+            "brightness": float(brightness),
+            "white_balance": float(white_balance),
+            "last_pattern": pattern,
+            "target": target,
+        }
+    )
+    return ESP3_STATE
+
+
+def apply_default_esp3() -> bool:
+    states, default_name = load_esp3_states()
+    if not default_name or default_name not in states:
+        return False
+    _apply_esp3_snapshot(states[default_name])
+    return True
+
+
+@app.route("/api/esp3/state")
+def api_esp3_state():
+    return jsonify({"ok": True, "state": ESP3_STATE, "ip": ESP3_DEFAULT_IP})
+
+
+@app.route("/api/esp3/states", methods=["GET"])
+def api_esp3_states():
+    states, default_name = load_esp3_states()
+    payload = [{"name": k, "data": v} for k, v in sorted(states.items())]
+    return jsonify({"states": payload, "default": default_name})
+
+
+@app.route("/api/esp3/state/save", methods=["POST"])
+def api_esp3_state_save():
+    body = request.get_json(force=True) or {}
+    name = (body.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "Name required"}), 400
+    states, default_name = load_esp3_states()
+    snapshot = {
+        "pattern": ESP3_STATE.get("last_pattern", "white"),
+        "brightness": ESP3_STATE.get("brightness", 200),
+        "white_balance": ESP3_STATE.get("white_balance", 4500),
+        "target": ESP3_STATE.get("target", "both"),
+    }
+    states[name] = snapshot
+    write_esp3_states(states, default_name)
+    return jsonify({"ok": True, "state": {"name": name, "data": snapshot}})
+
+
+@app.route("/api/esp3/state/apply", methods=["POST"])
+def api_esp3_state_apply():
+    body = request.get_json(force=True) or {}
+    name = (body.get("name") or "").strip()
+    states, default_name = load_esp3_states()
+    if not name or name not in states:
+        return jsonify({"ok": False, "error": "State not found"}), 404
+    data = states[name]
+    new_state = _apply_esp3_snapshot(data)
+    return jsonify({"ok": True, "state": {"name": name, "data": data}, "applied": new_state})
+
+
+@app.route("/api/esp3/state/default", methods=["POST"])
+def api_esp3_state_default():
+    body = request.get_json(force=True) or {}
+    name = (body.get("name") or "").strip()
+    states, _ = load_esp3_states()
+    if not name or name not in states:
+        return jsonify({"ok": False, "error": "State not found"}), 404
+    write_esp3_states(states, name)
+    _apply_esp3_snapshot(states[name])
+    return jsonify({"ok": True, "default": name})
+
+
+@app.route("/api/esp3/state/delete", methods=["POST"])
+def api_esp3_state_delete():
+    body = request.get_json(force=True) or {}
+    name = (body.get("name") or "").strip()
+    states, default_name = load_esp3_states()
+    if not name or name not in states:
+        return jsonify({"ok": False, "error": "State not found"}), 404
+    states.pop(name, None)
+    if default_name == name:
+        default_name = None
+    write_esp3_states(states, default_name)
+    return jsonify({"ok": True, "default": default_name})
+
+
+@app.route("/api/esp3/set", methods=["POST"])
+def api_esp3_set():
+    body = request.get_json(force=True) or {}
+    pattern = body.get("pattern", "white")
+    brightness = body.get("brightness", ESP3_STATE.get("brightness", 200))
+    white_balance = body.get("white_balance", ESP3_STATE.get("white_balance", 4500))
+    target = body.get("target", "both")
+    if pattern not in CAMMING_PATTERNS:
+        pattern = "white"
+    payload: Dict = {
+        "cmd": "set",
+        "pattern": pattern,
+        "target": target,
+        "strips": [{"pin": 33, "length": 300}, {"pin": 32, "length": 300}],
+    }
+    if brightness is not None:
+        payload["brightness"] = float(brightness)
+    wb = float(white_balance) if white_balance is not None else 4500.0
+    payload["white_balance"] = wb
+    if pattern == "white":
+        payload["color"] = color_temp_to_rgb(wb)
+    publish_esp3(payload)
+    ESP3_STATE.update(
+        {
+            "brightness": float(brightness) if brightness is not None else ESP3_STATE.get("brightness"),
+            "white_balance": wb,
+            "last_pattern": payload.get("pattern", pattern),
+            "target": target,
+        }
+    )
+    return jsonify({"ok": True, "state": ESP3_STATE})
 
 @app.route("/api/pi-temp")
 def api_pi_temp():
@@ -521,6 +718,23 @@ def start_default_watcher():
     t.start()
 
 
+def start_esp3_default_watcher():
+    """Background thread: when camming ESP comes online, push its default preset."""
+    import threading
+
+    def loop():
+        global LAST_ESP3_UP
+        while True:
+            reachable = ping_ip(ESP3_DEFAULT_IP)
+            if reachable and not LAST_ESP3_UP:
+                apply_default_esp3()
+            LAST_ESP3_UP = reachable
+            time.sleep(5)
+
+    t = threading.Thread(target=loop, daemon=True)
+    t.start()
+
+
 def load_states() -> (Dict[str, Dict], Optional[str]):
     """Load saved LED states from disk.
     Returns (states_dict, default_name). Supports both legacy dict-only format and new wrapped format.
@@ -704,6 +918,15 @@ def api_set_all():
     return jsonify({"ok": True, "state": list(STATE_CACHE.values())})
 
 
+@app.route("/quickmenu")
+def quickmenu():
+    return render_template_string(
+        QUICKMENU_HTML,
+        patterns=PATTERNS,
+        esp_default_ip=ESP_DEFAULT_IP,
+        esp2_default_ip=ESP2_DEFAULT_IP,
+    )
+
 
 HTML = """
 <!DOCTYPE html>
@@ -777,9 +1000,13 @@ button:active { transform: translateY(1px); box-shadow: 2px 2px 0 #111; }
       <div style=\"display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end;\">
         <button class=\"btn-secondary\" style=\"padding:10px 12px;\" onclick=\"lightsOff()\">All Off</button>
         <button style=\"padding:10px 12px; background:#d4ffb5;\" onclick=\"lightsOn()\">All On</button>
+        <a href=\"/quickmenu\" style=\"text-decoration:none;\">
+          <button class=\"btn-secondary\" style=\"padding:10px 12px;\">Open Quick Menu</button>
+        </a>
         <div class=\"badge\" id=\"svc-badge\"><span class=\"status-dot\" id=\"svc-dot\"></span><span id=\"svc-text\">Service: …</span></div>
         <div class=\"badge\" id=\"esp-badge\"><span class=\"status-dot\" id=\"esp-dot\" style=\"background:#f2a900; box-shadow:0 0 10px #f2a900;\"></span><span id=\"esp-text\">ESP: …</span></div>
         <div class=\"badge\" id=\"esp2-badge\"><span class=\"status-dot\" id=\"esp2-dot\" style=\"background:#f2a900; box-shadow:0 0 10px #f2a900;\"></span><span id=\"esp2-text\">ESP2: …</span></div>
+        <div class=\"badge\" id=\"esp3-badge\"><span class=\"status-dot\" id=\"esp3-dot\" style=\"background:#f2a900; box-shadow:0 0 10px #f2a900;\"></span><span id=\"esp3-text\">ESP3: …</span></div>
         <div class=\"badge\" id=\"pi-badge\"><span class=\"status-dot\" id=\"pi-dot\"></span><span id=\"pi-text\">Pi temp: …</span></div>
       </div>
     </div>
@@ -882,6 +1109,42 @@ button:active { transform: translateY(1px); box-shadow: 2px 2px 0 #111; }
         </div>
       </div>
     </div>
+    <div class=\"card\" style=\"margin-top:12px; background:#f9fbff;\">
+      <div style=\"display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;\">
+        <h3 style=\"margin:0;\">Camming lights (ESP32U)</h3>
+        <div class=\"pill\" style=\"background:#fff;\">Pins 33 · 32 · 300 LEDs each</div>
+      </div>
+      <p style=\"margin:6px 0 10px; color:var(--muted);\">Dedicated controls for the ESP32U. Brightness and presets are independent from the other strips.</p>
+      <div class=\"grid\" style=\"grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));\">
+        <div class=\"field\">
+          <label>Brightness</label>
+          <div class=\"range\">
+            <input id=\"esp3_brightness\" type=\"range\" min=\"0\" max=\"255\" value=\"200\" oninput=\"esp3BOut.textContent=this.value; scheduleEsp3Apply();\">
+            <output id=\"esp3BOut\">200</output>
+          </div>
+        </div>
+      </div>
+      <div class=\"grid\" style=\"margin-top:10px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));\">
+        <button onclick=\"esp3White()\">White</button>
+        <button class=\"btn-secondary\" onclick=\"esp3Rainbow()\">Rainbow</button>
+        <button class=\"btn-secondary\" style=\"background:#ffe3ff;\" onclick=\"esp3Hills()\">Rainbow hills</button>
+      </div>
+    </div>
+    <div class=\"card\" style=\"margin-top:12px; background:#f6fff8;\">
+      <h3 style=\"margin:0 0 8px;\">Camming presets</h3>
+      <div class=\"grid\" style=\"grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items:end;\">
+        <div class=\"field\">
+          <label>Saved camming states</label>
+          <select id=\"esp3-state-select\"></select>
+        </div>
+        <input id=\"esp3-state-name\" type=\"text\" placeholder=\"Name (e.g. soft white)\" style=\"padding:10px 12px; border-radius:10px; border:1px solid var(--border); font-size:14px; min-width:160px;\">
+        <button onclick=\"saveEsp3State()\">Save current</button>
+        <button class=\"btn-secondary\" onclick=\"applyEsp3State()\">Apply</button>
+        <button class=\"btn-secondary\" onclick=\"setDefaultEsp3State()\">Set default</button>
+        <button class=\"btn-secondary\" style=\"background:#ffd1d1;\" onclick=\"deleteEsp3State()\">Delete</button>
+      </div>
+      <div id=\"esp3-default-label\" class=\"pill\" style=\"margin-top:6px;\">Default: none</div>
+    </div>
     <div class=\"card\" style=\"margin-top:12px;\">
       <h3 style=\"margin:0 0 8px;\">States</h3>
       <div id=\"state-grid\" class=\"grid\" style=\"grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));\"></div>
@@ -976,8 +1239,47 @@ async function sendGlobalBrightness() {
   refreshState();
 }
 
+async function loadEsp3State() {
+  try {
+    const res = await fetch('/api/esp3/state');
+    const data = await res.json();
+    if (data && data.state) {
+      esp3State = Object.assign(esp3State, data.state || {});
+      if (esp3State.last_pattern) esp3LastPattern = esp3State.last_pattern;
+      if (esp3State.brightness !== undefined) {
+        document.getElementById('esp3_brightness').value = esp3State.brightness;
+        document.getElementById('esp3BOut').textContent = esp3State.brightness;
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+async function sendEsp3(pattern, opts = {}) {
+  esp3LastPattern = pattern || esp3LastPattern || 'white';
+  const body = {
+    pattern: esp3LastPattern,
+    brightness: parseFloat(opts.brightness ?? document.getElementById('esp3_brightness').value ?? esp3State.brightness ?? 200),
+    target: opts.target || 'both',
+  };
+  await fetch('/api/esp3/set', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+}
+function esp3White() { sendEsp3('white'); }
+function esp3Rainbow() { sendEsp3('rainbow'); }
+function esp3Hills() { sendEsp3('rainbow_hills'); }
+// Debounced apply when sliders move so brightness takes effect.
+let esp3ApplyTimer = null;
+function scheduleEsp3Apply() {
+  if (esp3ApplyTimer) clearTimeout(esp3ApplyTimer);
+  esp3ApplyTimer = setTimeout(() => {
+    sendEsp3(esp3LastPattern || 'white');
+  }, 120);
+}
+
 async function lightsOff() {
   await fetch('/api/set-all', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({brightness: 0})});
+  await fetch('/api/esp3/set', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({brightness: 0, pattern: esp3LastPattern || 'white', target:'both'})});
   document.getElementById('gbrightness').value = 0;
   document.getElementById('gbOut').textContent = 0;
   refreshState();
@@ -994,6 +1296,7 @@ async function lightsOn() {
   } catch (e) {
     await fetch('/api/set-all', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({brightness: 180})});
   }
+  await fetch('/api/esp3/set', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({pattern: esp3LastPattern || 'white', brightness: esp3State.brightness || 200, target:'both'})});
   document.getElementById('gbrightness').value = 180;
   document.getElementById('gbOut').textContent = 180;
   refreshState();
@@ -1003,6 +1306,11 @@ let defaultStateName = null;
 const liveState = {};
 const gradientPalettes = {{ gradients|tojson }};
 const esp2Ip = "{{ esp2_default_ip }}";
+const esp3Ip = "{{ esp3_default_ip }}";
+let esp3State = {brightness: 200, white_balance: 4500, last_pattern: 'white', target:'both'};
+let esp3LastPattern = 'white';
+const esp3StateCache = {};
+let esp3DefaultStateName = null;
 
 function currentPayloadFromForm() {
   const gradient = getGradientSelection();
@@ -1143,6 +1451,68 @@ async function deleteState() {
   await fetch('/api/state/delete', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name})});
   await refreshStatesList();
 }
+
+async function refreshEsp3StatesList() {
+  try {
+    const res = await fetch('/api/esp3/states');
+    const data = await res.json();
+    const sel = document.getElementById('esp3-state-select');
+    sel.innerHTML = '';
+    Object.keys(esp3StateCache).forEach((k) => delete esp3StateCache[k]);
+    (data.states || []).forEach((s) => {
+      esp3StateCache[s.name] = s.data;
+      const opt = document.createElement('option');
+      opt.value = s.name;
+      opt.textContent = s.name;
+      sel.appendChild(opt);
+    });
+    esp3DefaultStateName = data.default || null;
+    const label = document.getElementById('esp3-default-label');
+    if (label) label.textContent = `Default: ${esp3DefaultStateName || 'none'}`;
+    if (esp3DefaultStateName && sel.options.length) {
+      sel.value = esp3DefaultStateName;
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+async function saveEsp3State() {
+  const name = (document.getElementById('esp3-state-name').value || '').trim();
+  if (!name) return;
+  await fetch('/api/esp3/state/save', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name})});
+  await refreshEsp3StatesList();
+  document.getElementById('esp3-state-select').value = name;
+}
+
+async function applyEsp3State() {
+  const sel = document.getElementById('esp3-state-select');
+  const name = sel.value;
+  if (!name) return;
+  await fetch('/api/esp3/state/apply', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name})});
+  await loadEsp3State();
+}
+
+async function setDefaultEsp3State() {
+  const sel = document.getElementById('esp3-state-select');
+  const name = sel.value;
+  if (!name) return;
+  await fetch('/api/esp3/state/default', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name})});
+  esp3DefaultStateName = name;
+  const label = document.getElementById('esp3-default-label');
+  if (label) label.textContent = `Default: ${esp3DefaultStateName}`;
+  await applyEsp3State();
+}
+
+async function deleteEsp3State() {
+  const sel = document.getElementById('esp3-state-select');
+  const name = sel.value;
+  if (!name) return;
+  const sure = window.confirm(`Delete camming preset "${name}"?`);
+  if (!sure) return;
+  await fetch('/api/esp3/state/delete', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name})});
+  await refreshEsp3StatesList();
+}
 async function sendGlobalBrightness() {
   const val = parseFloat(document.getElementById('gbrightness').value || '0');
   await fetch('/api/set-all', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({brightness: val})});
@@ -1175,6 +1545,8 @@ document.getElementById('mic_enabled').checked = true;
 toggleGradientBox();
 // Load current segment once on page load so the form matches live state.
 loadSegmentFromState();
+loadEsp3State();
+refreshEsp3StatesList();
 
 async function refreshEsp() {
   try {
@@ -1222,6 +1594,30 @@ async function refreshEsp2() {
 }
 refreshEsp2();
 setInterval(refreshEsp2, 7000);
+async function refreshEsp3() {
+  const dot = document.getElementById('esp3-dot');
+  const text = document.getElementById('esp3-text');
+  if (!dot || !text) return;
+  try {
+    const res = await fetch(`/api/esp-status?ip=${esp3Ip}`);
+    const data = await res.json();
+    if (data.reachable) {
+      text.textContent = `ESP3 ${data.ip}: online`;
+      dot.style.background = '#00c853';
+      dot.style.boxShadow = '0 0 12px #00c853';
+    } else {
+      text.textContent = `ESP3 ${data.ip}: offline?`;
+      dot.style.background = '#ff7f7f';
+      dot.style.boxShadow = '0 0 12px #ff7f7f';
+    }
+  } catch (e) {
+    text.textContent = 'ESP3: unknown';
+    dot.style.background = '#ff7f7f';
+    dot.style.boxShadow = '0 0 12px #ff7f7f';
+  }
+}
+refreshEsp3();
+setInterval(refreshEsp3, 7000);
 
 function renderStateGrid(list) {
   const grid = document.getElementById('state-grid');
@@ -1415,14 +1811,303 @@ function stateBackgroundStyle(s) {
 </html>
 """
 
+QUICKMENU_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>LED Quick Menu</title>
+  <style>
+    :root {
+      --bg: #060b16;
+      --card: #0f1629;
+      --accent: #5eead4;
+      --accent-2: #fbbf24;
+      --text: #e8edf7;
+      --muted: #9fb0d0;
+      --danger: #ef4444;
+      --shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(120% 120% at 20% 20%, #0f1b2e 0%, #050912 60%, #04060c 100%);
+      font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .wrap { width: min(900px, 96vw); margin: 0 auto; padding: 16px 16px 22px; }
+    .card {
+      background: var(--card);
+      border: 1px solid #1d2740;
+      border-radius: 16px;
+      padding: 14px;
+      margin-top: 12px;
+      box-shadow: var(--shadow);
+    }
+    .label { font-size: 14px; color: var(--muted); margin-bottom: 6px; letter-spacing: 0.2px; }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    input[type=range] { width: 100%; accent-color: var(--accent); }
+    .pill {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid #263654;
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-weight: 700;
+      min-width: 58px;
+      text-align:center;
+    }
+    button, .ghost-link {
+      appearance: none;
+      border: none;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 17px;
+      font-weight: 700;
+      color: #0c111a;
+      background: linear-gradient(135deg, var(--accent), #3db9a5);
+      box-shadow: 0 8px 24px rgba(94, 234, 212, 0.25);
+      cursor: pointer;
+      min-width: 96px;
+      text-decoration: none;
+      text-align: center;
+    }
+    button:active, .ghost-link:active { transform: translateY(1px); }
+    .ghost-link { display:inline-block; color: var(--text); background: rgba(255,255,255,0.08); box-shadow: none; border: 1px solid #263654; }
+    .danger { background: linear-gradient(135deg, #f87171, #ef4444); box-shadow: 0 8px 24px rgba(239, 68, 68, 0.25); color: #1b0b0b; }
+    .pattern-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+    .chip { width: 100%; }
+    .status {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 14px;
+      text-align: center;
+    }
+    .badges { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:10px; }
+    .badge { display:inline-flex; align-items:center; gap:8px; padding:8px 12px; border-radius:12px; background: rgba(255,255,255,0.06); border:1px solid #263654; }
+    .dot { width:10px; height:10px; border-radius:50%; background:#f97316; box-shadow:0 0 10px rgba(249,115,22,0.7); }
+    @media (max-width: 700px) {
+      button, .ghost-link { width: 100%; }
+      .row { flex-direction: column; align-items: stretch; }
+      .pattern-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="label">Global brightness</div>
+      <div class="row">
+        <input id="brightness" type="range" min="0" max="255" value="180" oninput="updateBrightness(this.value)">
+        <div class="pill" id="bval">180</div>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <button onclick="lightsOn()">On</button>
+        <button class="danger" onclick="lightsOff()">Off</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="label">Pattern</div>
+      <div id="pattern-grid" class="pattern-grid"></div>
+    </div>
+    <div class="card">
+      <div class="label">Camming lights</div>
+      <div class="row">
+        <input id="qm-cam-brightness" type="range" min="0" max="255" value="200" oninput="updateQmCamBrightness(this.value)">
+        <div class="pill" id="qm-cam-bval">200</div>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <button onclick="qmCamWhite()">White</button>
+        <button class="ghost-link" onclick="qmCamRainbow()">Rainbow</button>
+        <button class="ghost-link" onclick="qmCamHills()">Rainbow hills</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="label">Shortcuts</div>
+      <div class="row">
+        <a class="ghost-link" href="/">Open full UI</a>
+        <button class="ghost-link" onclick="window.location.reload()">Reload</button>
+      </div>
+    </div>
+    <div id="status" class="status">Ready.</div>
+    <div class="badges">
+      <div class="badge" id="esp1-badge"><span class="dot" id="esp1-dot"></span><span id="esp1-text">ESP1: …</span></div>
+      <div class="badge" id="esp2-badge"><span class="dot" id="esp2-dot"></span><span id="esp2-text">ESP2: …</span></div>
+      <div class="badge" id="esp3-badge"><span class="dot" id="esp3-dot"></span><span id="esp3-text">ESP3: …</span></div>
+    </div>
+  </div>
+  <script>
+const patterns = {{ patterns|tojson }};
+const espIp = "{{ esp_default_ip }}";
+const esp2Ip = "{{ esp2_default_ip }}";
+const esp3Ip = "{{ esp3_default_ip }}";
+const statusEl = document.getElementById('status');
+const brightnessEl = document.getElementById('brightness');
+const bval = document.getElementById('bval');
+const qmCamB = document.getElementById('qm-cam-brightness');
+const qmCamBVal = document.getElementById('qm-cam-bval');
+let qmCamLastPattern = 'white';
+let qmCamSendTimer = null;
+let lastBrightness = parseFloat(brightnessEl.value || '180');
+let brightnessTimer = null;
+
+    function setStatus(msg) { statusEl.textContent = msg; }
+
+    async function postJson(url, body) {
+      return fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body || {})});
+    }
+
+    function updateBrightness(val) {
+      const num = parseFloat(val);
+      bval.textContent = val;
+      setStatus(`Brightness ${val}`);
+      if (num > 0) lastBrightness = num;
+      if (brightnessTimer) clearTimeout(brightnessTimer);
+      brightnessTimer = setTimeout(() => {
+        postJson('/api/set-all', {brightness: num}).catch(() => {});
+      }, 80);
+    }
+
+    function updateQmCamBrightness(val) {
+      qmCamBVal.textContent = val;
+      if (qmCamSendTimer) clearTimeout(qmCamSendTimer);
+      qmCamSendTimer = setTimeout(() => {
+        qmCamSend({pattern: qmCamLastPattern || 'white', brightness: parseFloat(qmCamB.value || '200'), target:'both'});
+      }, 120);
+    }
+
+    async function qmCamSend(body) {
+      await postJson('/api/esp3/set', body);
+    }
+    async function qmCamWhite() {
+      qmCamLastPattern = 'white';
+      await qmCamSend({pattern: 'white', brightness: parseFloat(qmCamB.value || '200'), target:'both'});
+      setStatus('Camming: white');
+    }
+    async function qmCamRainbow() {
+      qmCamLastPattern = 'rainbow';
+      await qmCamSend({pattern: 'rainbow', brightness: parseFloat(qmCamB.value || '200'), target:'both'});
+      setStatus('Camming: rainbow');
+    }
+    async function qmCamHills() {
+      qmCamLastPattern = 'rainbow_hills';
+      await qmCamSend({pattern: 'rainbow_hills', brightness: parseFloat(qmCamB.value || '200'), target:'both'});
+      setStatus('Camming: rainbow hills');
+    }
+
+    async function setPattern(name) {
+      setStatus(`Pattern: ${name}`);
+      await postJson('/api/set-all', {pattern: name});
+    }
+
+    async function lightsOn() {
+      let val = lastBrightness > 0 ? lastBrightness : 180;
+      brightnessEl.value = val;
+      bval.textContent = val;
+      setStatus('Lights on');
+      await postJson('/api/set-all', {brightness: val});
+      await qmCamSend({pattern: qmCamLastPattern || 'white', brightness: parseFloat(qmCamB.value || '200'), target:'both'});
+    }
+
+    async function lightsOff() {
+      const current = parseFloat(brightnessEl.value || '0');
+      if (current > 0) lastBrightness = current;
+      setStatus('Lights off');
+      brightnessEl.value = 0;
+      bval.textContent = '0';
+      await postJson('/api/set-all', {brightness: 0});
+      await qmCamSend({pattern: qmCamLastPattern || 'white', brightness: 0, target:'both'});
+    }
+
+    function renderPatterns() {
+      const grid = document.getElementById('pattern-grid');
+      patterns.forEach((name) => {
+        const btn = document.createElement('button');
+        btn.textContent = name;
+        btn.className = 'chip';
+        btn.onclick = () => setPattern(name);
+        grid.appendChild(btn);
+      });
+    }
+
+    async function syncInitial() {
+      try {
+        const res = await fetch('/api/state');
+        const data = await res.json();
+        if (data && data.state && data.state.length) {
+          const first = data.state[0];
+          if (first && typeof first.brightness !== 'undefined') {
+            brightnessEl.value = first.brightness;
+            bval.textContent = first.brightness;
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    renderPatterns();
+    syncInitial();
+    (async () => {
+      try {
+        const res = await fetch('/api/esp3/state');
+        const data = await res.json();
+        if (data && data.state && typeof data.state.brightness !== 'undefined') {
+          qmCamB.value = data.state.brightness;
+          qmCamBVal.textContent = data.state.brightness;
+          if (data.state.last_pattern) qmCamLastPattern = data.state.last_pattern;
+        }
+      } catch (e) {
+        // ignore
+      }
+    })();
+
+    async function refreshEspBadge(ip, dotEl, textEl, label) {
+      if (!dotEl || !textEl) return;
+      try {
+        const res = await fetch(`/api/esp-status?ip=${encodeURIComponent(ip)}`);
+        const data = await res.json();
+        if (data.reachable) {
+          dotEl.style.background = '#22c55e';
+          dotEl.style.boxShadow = '0 0 10px rgba(34,197,94,0.7)';
+          textEl.textContent = `${label} ${data.ip}: online`;
+        } else {
+          dotEl.style.background = '#ef4444';
+          dotEl.style.boxShadow = '0 0 10px rgba(239,68,68,0.7)';
+          textEl.textContent = `${label} ${data.ip}: offline?`;
+        }
+      } catch (e) {
+        dotEl.style.background = '#f97316';
+        dotEl.style.boxShadow = '0 0 10px rgba(249,115,22,0.7)';
+        textEl.textContent = `${label}: unknown`;
+      }
+    }
+function refreshBadges() {
+  refreshEspBadge(espIp, document.getElementById('esp1-dot'), document.getElementById('esp1-text'), 'ESP1');
+  refreshEspBadge(esp2Ip, document.getElementById('esp2-dot'), document.getElementById('esp2-text'), 'ESP2');
+  refreshEspBadge(esp3Ip, document.getElementById('esp3-dot'), document.getElementById('esp3-text'), 'ESP3');
+}
+    refreshBadges();
+    setInterval(refreshBadges, 7000);
+  </script>
+</body>
+</html>
+"""
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     start_default_watcher()
+    start_esp3_default_watcher()
     # Apply default once on startup in case ESP is already online.
     try:
         apply_default_state()
     except Exception as exc:
         # Keep the web UI up even if MQTT/ESP is unreachable on boot.
         print(f"apply_default_state failed: {exc}")
+    try:
+        apply_default_esp3()
+    except Exception as exc:
+        print(f"apply_default_esp3 failed: {exc}")
     app.run(host="0.0.0.0", port=port, debug=False)
