@@ -11,11 +11,13 @@ import os
 import time
 import subprocess
 import math
+from datetime import datetime
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from flask import Flask, jsonify, render_template_string, request
 import paho.mqtt.client as mqtt
+import requests
 
 MQTT_HOST = os.getenv("MQTT_HOST", "10.42.0.1")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
@@ -23,6 +25,7 @@ MQTT_USER = os.getenv("MQTT_USER") or None
 MQTT_PASS = os.getenv("MQTT_PASS") or None
 MQTT_CMD_TOPIC = os.getenv("MQTT_CMD_TOPIC", "led/command")
 STATES_FILE = os.getenv("LED_STATE_FILE", os.path.join(os.path.dirname(__file__), "led_states.json"))
+WEATHER_CACHE_FILE = os.getenv("WEATHER_CACHE_FILE", os.path.join(os.path.dirname(__file__), "weather_cache.json"))
 SEGMENTS = [
     "strip0",
     "strip1",
@@ -111,6 +114,36 @@ GRADIENT_PALETTE = [
     ("Berry Lime", [190, 40, 220], [0, 255, 120], [0, 200, 255]),
     ("Miami", [40, 250, 160], [10, 40, 90], [255, 0, 80]),
 ]
+WEATHER_CODES = {
+    0: "Clear sky",
+    1: "Mostly clear",
+    2: "Partly cloudy",
+    3: "Overcast",
+    45: "Foggy",
+    48: "Rime fog",
+    51: "Light drizzle",
+    53: "Drizzle",
+    55: "Heavy drizzle",
+    56: "Freezing drizzle",
+    57: "Freezing drizzle (heavy)",
+    61: "Light rain",
+    63: "Rain",
+    65: "Heavy rain",
+    66: "Freezing rain",
+    67: "Freezing rain (heavy)",
+    71: "Light snow",
+    73: "Snow",
+    75: "Heavy snow",
+    77: "Snow grains",
+    80: "Rain showers",
+    81: "Heavy rain showers",
+    82: "Violent rain showers",
+    85: "Snow showers",
+    86: "Heavy snow showers",
+    95: "Thunderstorm",
+    96: "Thunderstorm with hail",
+    99: "Thunderstorm with heavy hail",
+}
 START_TIME = time.time()
 ESP_DEFAULT_IP = os.getenv("ESP_IP", "10.42.0.13")
 ESP2_DEFAULT_IP = os.getenv("ESP2_IP", "10.42.0.29")
@@ -317,6 +350,64 @@ def api_status():
             "esp3_default_ip": ESP3_DEFAULT_IP,
         }
     )
+
+
+@app.route("/api/weather")
+def api_weather():
+    """Fetch weather for given lat/lon; falls back to cached/manual when offline."""
+    lat = request.args.get("lat", type=float)
+    lon = request.args.get("lon", type=float)
+    label = request.args.get("label", "Your location")
+    cache_only = str(request.args.get("cache_only", "")).lower() in ("1", "true", "yes")
+    cache = read_weather_cache()
+
+    if cache_only or lat is None or lon is None:
+        if cache:
+            resp = dict(cache)
+            resp["ok"] = True
+            resp["source"] = "cache"
+            return jsonify(resp)
+        return jsonify({"ok": False, "error": "missing_location_and_cache"})
+
+    try:
+        snap = fetch_weather(lat, lon, label or "Your location")
+        snap["ok"] = True
+        snap["source"] = snap.get("source", "open-meteo")
+        return jsonify(snap)
+    except Exception as exc:
+        if cache:
+            resp = dict(cache)
+            resp["ok"] = True
+            resp["source"] = "cache"
+            resp["error"] = str(exc)
+            return jsonify(resp)
+        return jsonify({"ok": False, "error": "unavailable"})
+
+
+@app.route("/api/weather/manual", methods=["POST"])
+def api_weather_manual():
+    """Allow manual/offline weather entry; also persists to cache."""
+    data = request.get_json(force=True) or {}
+
+    def _num(val):
+        try:
+            return float(val)
+        except Exception:
+            return None
+
+    payload = {
+        "location": (data.get("location") or data.get("label") or "Manual entry"),
+        "lat": _num(data.get("lat")),
+        "lon": _num(data.get("lon")),
+        "temp_f": _num(data.get("temp_f") or data.get("temp")),
+        "humidity": _num(data.get("humidity")),
+        "wind_mph": _num(data.get("wind_mph") or data.get("wind")),
+        "condition": data.get("condition") or "Manual entry",
+        "updated": datetime.utcnow().isoformat() + "Z",
+        "source": "manual",
+    }
+    write_weather_cache(payload)
+    return jsonify({"ok": True, **payload})
 
 
 def load_esp3_states() -> (Dict[str, Dict], Optional[str]):
@@ -668,6 +759,70 @@ def guess_esp_ip() -> Optional[str]:
     return last_ip
 
 
+def read_weather_cache() -> Optional[Dict]:
+    """Load the last known weather snapshot from disk."""
+    if not os.path.exists(WEATHER_CACHE_FILE):
+        return None
+    try:
+        with open(WEATHER_CACHE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except Exception:
+        return None
+    return None
+
+
+def write_weather_cache(data: Dict) -> None:
+    """Persist weather snapshot; best-effort (ignore errors)."""
+    try:
+        with open(WEATHER_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+    except Exception:
+        pass
+
+
+def fetch_weather(lat: float, lon: float, label: str) -> Dict:
+    """Fetch current weather from open-meteo for the given coords."""
+    url = (
+        "https://api.open-meteo.com/v1/forecast"
+        f"?latitude={lat}&longitude={lon}"
+        "&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code"
+        "&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto"
+    )
+    resp = requests.get(url, timeout=8)
+    resp.raise_for_status()
+    data = resp.json() or {}
+    current = data.get("current") or {}
+
+    def _safe_round(val, default=None):
+        try:
+            return round(float(val))
+        except Exception:
+            return default
+
+    code_val = current.get("weather_code")
+    try:
+        code_int = int(code_val)
+    except Exception:
+        code_int = None
+    condition = WEATHER_CODES.get(code_int, "Weather")
+    snapshot = {
+        "location": label or "Your location",
+        "lat": lat,
+        "lon": lon,
+        "temp_f": _safe_round(current.get("temperature_2m")),
+        "humidity": _safe_round(current.get("relative_humidity_2m")),
+        "wind_mph": _safe_round(current.get("wind_speed_10m")),
+        "condition": condition,
+        "code": code_int,
+        "updated": datetime.utcnow().isoformat() + "Z",
+        "source": "open-meteo",
+    }
+    write_weather_cache(snapshot)
+    return snapshot
+
+
 def _apply_segments_snapshot(data: Dict) -> None:
     """Apply a snapshot dict containing 'segments': {seg: {..}} or legacy single-segment dict."""
     global LAST_DEFAULT_APPLY
@@ -859,6 +1014,22 @@ def api_state_apply_default():
     return jsonify({"ok": ok})
 
 
+@app.route("/api/close-chromium", methods=["POST"])
+def api_close_chromium():
+    """Best-effort kill Chromium so the kiosk window closes."""
+    errors = []
+    killed = False
+    for pattern in ("chromium-browser", "chromium"):
+        try:
+            res = subprocess.run(["pkill", "-f", pattern], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if res.returncode == 0:
+                killed = True
+        except Exception as exc:
+            errors.append(str(exc))
+    ok = not errors
+    return jsonify({"ok": ok, "killed": killed, "errors": errors})
+
+
 @app.route("/api/set-all", methods=["POST"])
 def api_set_all():
     data = request.get_json(force=True)
@@ -926,6 +1097,15 @@ def api_set_all():
             cached["mic_beat"] = bool(mic_beat)
         STATE_CACHE[seg] = cached
     return jsonify({"ok": True, "state": list(STATE_CACHE.values())})
+
+
+@app.route("/weather")
+def weather_page():
+    return render_template_string(
+        WEATHER_HTML,
+        last_weather=read_weather_cache() or {},
+        quickmenu_url="/quickmenu",
+    )
 
 
 @app.route("/quickmenu")
@@ -1014,6 +1194,10 @@ button:active { transform: translateY(1px); box-shadow: 2px 2px 0 #111; }
         <a href=\"/quickmenu\" style=\"text-decoration:none;\">
           <button class=\"btn-secondary\" style=\"padding:10px 12px;\">Open Quick Menu</button>
         </a>
+        <a href=\"/weather\" style=\"text-decoration:none;\">
+          <button class=\"btn-secondary\" style=\"padding:10px 12px; background:#e0f2ff;\">Weather</button>
+        </a>
+        <button class=\"btn-secondary\" style=\"padding:10px 12px; background:#ffd1d1;\" onclick=\"closeChromium()\">Close Chromium</button>
         <div class=\"badge\" id=\"svc-badge\"><span class=\"status-dot\" id=\"svc-dot\"></span><span id=\"svc-text\">Service: …</span></div>
         <div class=\"badge\" id=\"esp-badge\"><span class=\"status-dot\" id=\"esp-dot\" style=\"background:#f2a900; box-shadow:0 0 10px #f2a900;\"></span><span id=\"esp-text\">ESP: …</span></div>
         <div class=\"badge\" id=\"esp2-badge\"><span class=\"status-dot\" id=\"esp2-dot\" style=\"background:#f2a900; box-shadow:0 0 10px #f2a900;\"></span><span id=\"esp2-text\">ESP2: …</span></div>
@@ -1301,6 +1485,17 @@ async function lightsOff() {
   document.getElementById('gbrightness').value = 0;
   document.getElementById('gbOut').textContent = 0;
   refreshState();
+}
+
+async function closeChromium() {
+  try {
+    const res = await fetch('/api/close-chromium', {method:'POST'});
+    const data = await res.json();
+    const msg = data && data.killed ? 'Chromium close requested.' : 'No Chromium processes were running.';
+    alert(msg);
+  } catch (e) {
+    alert('Close Chromium failed.');
+  }
 }
 
 async function lightsOn() {
@@ -1946,6 +2141,7 @@ QUICKMENU_HTML = """
       <div class="label">Shortcuts</div>
       <div class="row">
         <a class="ghost-link" href="/">Open full UI</a>
+        <a class="ghost-link" href="/weather">Weather</a>
         <button class="ghost-link" onclick="window.location.reload()">Reload</button>
       </div>
     </div>
@@ -1954,6 +2150,10 @@ QUICKMENU_HTML = """
       <div class="badge" id="esp1-badge"><span class="dot" id="esp1-dot"></span><span id="esp1-text">ESP1: …</span></div>
       <div class="badge" id="esp2-badge"><span class="dot" id="esp2-dot"></span><span id="esp2-text">ESP2: …</span></div>
       <div class="badge" id="esp3-badge"><span class="dot" id="esp3-dot"></span><span id="esp3-text">ESP3: …</span></div>
+    </div>
+    <div class="card" style="margin-top:14px; text-align:center;">
+      <button class="danger" style="width:100%;" onclick="closeChromium()">Close Chromium</button>
+      <div class="label" style="margin-top:8px; text-align:center;">Close the kiosk Chromium window on the Pi.</div>
     </div>
   </div>
   <script>
@@ -2056,6 +2256,21 @@ let brightnessTimer = null;
       await qmCamSend({pattern: qmCamLastPattern || 'white', brightness: 0, target:'both'});
     }
 
+    async function closeChromium() {
+      setStatus('Closing Chromium...');
+      try {
+        const res = await fetch('/api/close-chromium', {method:'POST'});
+        const data = await res.json();
+        if (data && data.killed) {
+          setStatus('Chromium close requested.');
+        } else {
+          setStatus('No Chromium processes were running.');
+        }
+      } catch (e) {
+        setStatus('Close Chromium failed.');
+      }
+    }
+
     function renderPatterns() {
       const grid = document.getElementById('pattern-grid');
       patterns.forEach((name) => {
@@ -2126,6 +2341,391 @@ function refreshBadges() {
 }
     refreshBadges();
     setInterval(refreshBadges, 7000);
+  </script>
+</body>
+</html>
+"""
+
+WEATHER_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Weather + Quickmenu</title>
+  <style>
+    :root {
+      --bg: #050910;
+      --card: #0f1626;
+      --card-2: #0c1a2c;
+      --accent: #ffb703;
+      --accent-2: #22d3ee;
+      --text: #e8edf7;
+      --muted: #9fb0c8;
+      --good: #34d399;
+      --danger: #f87171;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(130% 90% at 10% 10%, #0f182d 0%, #050910 60%, #04070f 100%);
+      font-family: "Segoe UI", "Helvetica Neue", system-ui, sans-serif;
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+    }
+    .screen { width: min(520px, 96vw); padding: 16px 14px 110px; }
+    .top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+    .eyebrow { text-transform: uppercase; letter-spacing: 1px; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .clock { font-size: 64px; font-weight: 800; letter-spacing: 1.2px; margin: 0; }
+    .muted { color: var(--muted); font-size: 15px; }
+    .card {
+      background: var(--card);
+      border: 1px solid #1f2a44;
+      border-radius: 18px;
+      padding: 14px;
+      margin-top: 12px;
+      box-shadow: 0 12px 35px rgba(0,0,0,0.35);
+    }
+    .primary-card {
+      background: linear-gradient(135deg, #0d1628, #0c1a2f);
+      border: 1px solid #233454;
+    }
+    .chip {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid #233454;
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-weight: 700;
+      font-size: 13px;
+    }
+    .temp-row { display:flex; gap:14px; align-items:center; }
+    .temp { font-size: 68px; font-weight: 800; letter-spacing: 0.5px; }
+    .condition { font-size: 22px; font-weight: 800; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid #233454;
+      font-size: 13px;
+      margin-right: 6px;
+      margin-top: 8px;
+      white-space: nowrap;
+    }
+    .pill.soft { background: rgba(255,255,255,0.04); }
+    .meta-row { display:flex; flex-wrap:wrap; gap:6px; }
+    .label { display:block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+    input {
+      width: 100%;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid #233454;
+      background: #0a1322;
+      color: var(--text);
+      font-size: 18px;
+    }
+    input::placeholder { color: #637297; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; }
+    .half { flex: 1 1 47%; }
+    button {
+      appearance: none;
+      border: none;
+      border-radius: 14px;
+      padding: 14px 16px;
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 0.3px;
+      color: #0a0d14;
+      background: linear-gradient(135deg, var(--accent), #fca311);
+      box-shadow: 0 10px 30px rgba(252, 163, 17, 0.35);
+      cursor: pointer;
+      width: 100%;
+      touch-action: manipulation;
+    }
+    button:active { transform: translateY(1px); }
+    .buttons button { flex: 1 1 48%; }
+    .ghost {
+      background: linear-gradient(135deg, #1c2c46, #14243c);
+      color: var(--text);
+      box-shadow: none;
+    }
+    .status { margin-top: 10px; }
+    .small { font-size: 12px; margin-top: 6px; }
+    .quickmenu-btn {
+      width: 100%;
+      background: linear-gradient(135deg, #22d3ee, #3b82f6);
+      color: #041224;
+    }
+    .secondary-btn {
+      width: 100%;
+      background: linear-gradient(135deg, #f87171, #ef4444);
+      color: #1b0b0b;
+      box-shadow: 0 10px 30px rgba(239, 68, 68, 0.35);
+    }
+    .cta-wrap {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 12px;
+      width: min(520px, 96vw);
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    @media (max-width: 540px) {
+      .clock { font-size: 54px; }
+      .temp { font-size: 60px; }
+      .buttons { flex-direction: column; }
+      .buttons button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="screen">
+    <div class="top">
+      <div>
+        <div class="eyebrow">Local time</div>
+        <div id="clock" class="clock">--:--</div>
+        <div id="date" class="muted">Waiting…</div>
+      </div>
+      <div class="chip">Portrait / 5"</div>
+    </div>
+
+    <div class="card primary-card">
+      <div class="eyebrow">Weather now</div>
+      <div class="temp-row">
+        <div id="temp" class="temp">--°F</div>
+        <div>
+          <div id="condition" class="condition">Waiting for location…</div>
+          <div id="location" class="muted">Location: —</div>
+        </div>
+      </div>
+      <div class="meta-row">
+        <div id="wind" class="pill">Wind --</div>
+        <div id="humidity" class="pill">Humidity --</div>
+        <div id="updated" class="pill">Updated --</div>
+      </div>
+      <div id="source" class="pill soft">Source: offline/cache</div>
+    </div>
+
+    <div class="card">
+      <div class="eyebrow">Pick a location</div>
+      <div class="row">
+        <div class="half">
+          <label class="label" for="preset-select">Preset</label>
+          <select id="preset-select" style="width:100%; padding:12px; border-radius:12px; border:1px solid #233454; background:#0a1322; color:var(--text); font-size:18px;">
+            <option value="">Choose city</option>
+            <option value="San Diego" data-lat="32.7157" data-lon="-117.1611">San Diego</option>
+            <option value="Niland" data-lat="33.2378" data-lon="-115.5180">Niland</option>
+            <option value="San Francisco" data-lat="37.7749" data-lon="-122.4194">San Francisco</option>
+            <option value="Chicago" data-lat="41.8781" data-lon="-87.6298">Chicago</option>
+            <option value="Detroit" data-lat="42.3314" data-lon="-83.0458">Detroit</option>
+          </select>
+        </div>
+        <div class="half">
+          <label class="label" for="location-input">Custom location</label>
+          <input id="location-input" type="text" placeholder="Name">
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <div class="half">
+          <label class="label" for="lat-input">Latitude</label>
+          <input id="lat-input" type="number" step="0.0001" inputmode="decimal" placeholder="33.0000">
+        </div>
+        <div class="half">
+          <label class="label" for="lon-input">Longitude</label>
+          <input id="lon-input" type="number" step="0.0001" inputmode="decimal" placeholder="-115.0000">
+        </div>
+      </div>
+      <div class="row buttons" style="margin-top:12px;">
+        <button class="ghost" onclick="useGps()">Use current location</button>
+        <button onclick="refreshWeather()">Refresh weather</button>
+      </div>
+      <div id="status" class="muted status">Waiting for location…</div>
+    </div>
+  </div>
+  <div class="cta-wrap">
+    <button class="quickmenu-btn" onclick="launchQuickmenu()">Launch Quickmenu</button>
+    <button class="secondary-btn" onclick="closeChromium()">Close Chromium</button>
+  </div>
+  <script>
+    const quickmenuUrl = "{{ quickmenu_url }}";
+    const serverCache = {{ last_weather|tojson }};
+    const presets = [
+      { name: 'San Diego', lat: 32.7157, lon: -117.1611 },
+      { name: 'Niland', lat: 33.2378, lon: -115.5180 },
+      { name: 'San Francisco', lat: 37.7749, lon: -122.4194 },
+      { name: 'Chicago', lat: 41.8781, lon: -87.6298 },
+      { name: 'Detroit', lat: 42.3314, lon: -83.0458 },
+    ];
+
+    const clockEl = document.getElementById('clock');
+    const dateEl = document.getElementById('date');
+    const tempEl = document.getElementById('temp');
+    const conditionEl = document.getElementById('condition');
+    const locationEl = document.getElementById('location');
+    const windEl = document.getElementById('wind');
+    const humidityEl = document.getElementById('humidity');
+    const updatedEl = document.getElementById('updated');
+    const sourceEl = document.getElementById('source');
+    const statusEl = document.getElementById('status');
+    const locationInput = document.getElementById('location-input');
+    const latInput = document.getElementById('lat-input');
+    const lonInput = document.getElementById('lon-input');
+    const presetSelect = document.getElementById('preset-select');
+
+    let latest = null;
+
+    function setStatus(msg) {
+      statusEl.textContent = msg;
+    }
+
+    function updateClock() {
+      const now = new Date();
+      clockEl.textContent = now.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+      dateEl.textContent = now.toLocaleDateString([], {weekday: 'short', month: 'short', day: 'numeric'});
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    function fmtUpdated(ts) {
+      try {
+        const d = new Date(ts);
+        return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+      } catch (e) {
+        return ts || '—';
+      }
+    }
+
+    function persistLocal(data) {
+      try { localStorage.setItem('weather_snapshot', JSON.stringify(data)); } catch (e) {}
+    }
+    function readLocal() {
+      try {
+        const raw = localStorage.getItem('weather_snapshot');
+        if (raw) return JSON.parse(raw);
+      } catch (e) {}
+      return null;
+    }
+
+    function renderWeather(data, note) {
+      if (!data) return;
+      latest = data;
+      const tempVal = typeof data.temp_f === 'number' ? Math.round(data.temp_f) : null;
+      tempEl.textContent = tempVal !== null ? `${tempVal}°F` : '--°F';
+      conditionEl.textContent = data.condition || 'Weather';
+      locationEl.textContent = data.location ? `Location: ${data.location}` : 'Location: —';
+      windEl.textContent = data.wind_mph !== null && data.wind_mph !== undefined ? `Wind ${Math.round(data.wind_mph)} mph` : 'Wind --';
+      humidityEl.textContent = data.humidity !== null && data.humidity !== undefined ? `Humidity ${Math.round(data.humidity)}%` : 'Humidity --';
+      updatedEl.textContent = data.updated ? `Updated ${fmtUpdated(data.updated)}` : 'Updated now';
+      sourceEl.textContent = `Source: ${data.source || 'cache'}`;
+      setStatus(note || `Weather updated (${data.source || 'cache'})`);
+      persistLocal(data);
+      if (data.location && !locationInput.value) locationInput.value = data.location;
+      if (data.lat && data.lon) {
+        latInput.value = Number(data.lat).toFixed(4);
+        lonInput.value = Number(data.lon).toFixed(4);
+      }
+    }
+
+    async function refreshWeather() {
+      const lat = parseFloat(latInput.value);
+      const lon = parseFloat(lonInput.value);
+      const label = (locationInput.value || '').trim() || 'Your location';
+      if (!isFinite(lat) || !isFinite(lon)) {
+        setStatus('Pick a preset, enter coords, or tap current location.');
+        return;
+      }
+      setStatus('Fetching weather…');
+      try {
+        const params = new URLSearchParams({ lat: lat.toString(), lon: lon.toString(), label });
+        const res = await fetch(`/api/weather?${params.toString()}`);
+        const data = await res.json();
+        if (data && data.ok) {
+          renderWeather(data, data.source === 'cache' ? 'Using cached weather' : 'Live weather fetched');
+        } else {
+          setStatus('Weather unavailable; using cached/manual if any.');
+          const local = readLocal();
+          if (local) renderWeather(local, 'Local cache');
+        }
+      } catch (e) {
+        setStatus('Offline; showing cached/manual data.');
+        const local = readLocal();
+        if (local) renderWeather(local, 'Local cache');
+      }
+    }
+
+    function useGps() {
+      if (!navigator.geolocation) {
+        setStatus('Geolocation not supported; type coords.');
+        return;
+      }
+      setStatus('Requesting location…');
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude, longitude } = pos.coords;
+          latInput.value = latitude.toFixed(4);
+          lonInput.value = longitude.toFixed(4);
+          refreshWeather();
+        },
+        () => setStatus('Location blocked; type coords or use manual weather.')
+      );
+    }
+
+    function launchQuickmenu() {
+      window.location.href = quickmenuUrl || '/quickmenu';
+    }
+
+    async function closeChromium() {
+      setStatus('Closing Chromium…');
+      try {
+        const res = await fetch('/api/close-chromium', { method: 'POST' });
+        const data = await res.json();
+        if (data && data.killed) {
+          setStatus('Chromium closed');
+        } else {
+          setStatus('No Chromium window found');
+        }
+      } catch (e) {
+        setStatus('Close Chromium failed');
+      }
+    }
+
+    presetSelect.addEventListener('change', () => {
+      const opt = presetSelect.options[presetSelect.selectedIndex];
+      const lat = parseFloat(opt.getAttribute('data-lat'));
+      const lon = parseFloat(opt.getAttribute('data-lon'));
+      const name = opt.value || '';
+      if (isFinite(lat) && isFinite(lon)) {
+        latInput.value = lat.toFixed(4);
+        lonInput.value = lon.toFixed(4);
+        locationInput.value = name;
+        refreshWeather();
+      }
+    });
+
+    (function bootstrap() {
+      const local = readLocal();
+      const hasServerCache = serverCache && Object.keys(serverCache).length;
+      if (hasServerCache) {
+        renderWeather(serverCache, serverCache.source ? `Loaded ${serverCache.source}` : 'Loaded cached weather');
+      } else if (local) {
+        renderWeather(local, 'Loaded local cache');
+      } else {
+        setStatus('Enter a location or tap GPS.');
+      }
+      if (!hasServerCache) {
+        // Try pulling cache from server in case it changed.
+        fetch('/api/weather?cache_only=1')
+          .then((res) => res.json())
+          .then((data) => { if (data && data.ok) renderWeather(data, 'Loaded Pi cache'); })
+          .catch(() => {});
+      }
+    })();
   </script>
 </body>
 </html>
